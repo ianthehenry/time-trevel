@@ -5,8 +5,7 @@
 
 (enable-console-print!)
 
-(js/Trello.authorize (clj->js {:type "popup"
-                               :name "Time Treveller"
+(js/Trello.authorize (clj->js {:name "Time Treveller"
                                :expiration "never"}))
 
 (defn trello [method args path callback]
@@ -22,34 +21,48 @@
 
 (def app-state (atom {}))
 
-
-(defn style [dict]
-  (clj->js {:style dict}))
+(defn div [props & children]
+  (apply dom/div (clj->js props) children))
 
 (defn card-component [card owner]
   (om/component
-   (dom/div (style {:background-color "#fff"
-                    :margin 8})
-            (:name card))))
+   (div {:className "card"
+         :style {:background-color "#fff"
+                 :flex "none"}}
+        (:name card))))
 
 (defn list-component [list owner]
   (om/component
-   (dom/div (style {:background-color "#bbb"
-                    :width 300
-                    :flex "none"})
-            (dom/h2 nil (:name list))
-            (apply dom/div nil
-                   (om/build-all card-component (:cards list))))))
+   (div {:className "list"
+         :style {:background-color "#bbb"
+                 :width 300
+                 :flex "none"
+                 :display "flex"
+                 :max-height "100%"
+                 :flex-direction "column"}}
+        (div {:style {:flex "none"}}
+             (:name list))
+        (apply div {:style {:overflow-y "scroll"
+                            :background-color "#8f8"}}
+               (om/build-all card-component (:cards list))))))
 
 (defn board-component [board owner]
   (om/component
-   (dom/div nil
-            (dom/div nil (:name board))
-            (apply dom/div (style {:display "flex"
-                                   :flex-direction "row"
-                                   :align-items "flex-start"
-                                   :justify-content "flex-start"})
-                   (om/build-all list-component (:lists board))))))
+   (div {:className "board"}
+        (div {:style {:height 30}}
+             (:name board))
+        (apply div {:style {:display "flex"
+                            :flex-direction "row"
+                            :flex "1 0 auto"
+                            :align-items "flex-start"
+                            :overflow-x "scroll"
+                            :position "absolute"
+                            :top 30
+                            :bottom 0
+                            :left 0
+                            :right 0
+                            :background-color "#f8f"}}
+               (om/build-all list-component (:lists board))))))
 
 (om/root board-component
          app-state
@@ -62,8 +75,6 @@
         sanitize-list (fn [list] (assoc list :cards (get card-map (:id list))))]
     (assoc board :lists (map sanitize-list (:lists board)))))
 
-(:lists (sanitize-board (:board @app-state)))
-
 (trello "GET"
         {:lists "open"
          :list_fields "name"
@@ -71,8 +82,3 @@
          :card_fields "name,idList"}
         "boards/2NRtSl8O"
         #(swap! app-state assoc :board (sanitize-board %)))
-
-; (js/console.log (clj->js (-> @app-state :board)))
-(let [swap (fn [f] (fn [a b] (f b a)))]
-  (-> @app-state :board :lists ((swap map) :name)))
-
