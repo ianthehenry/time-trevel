@@ -17,8 +17,6 @@
                   (fn [a]
                     (js/console.log (str "failed " a)))))
 
-;;;
-
 (def app-state (atom {}))
 
 (defn div [props & children]
@@ -27,47 +25,61 @@
 (defn card-component [card owner]
   (om/component
    (div {:className "card"
-         :style {:background-color "#fff"
-                 :flex "none"}}
+         :style {:flex "none"}}
         (:name card))))
 
 (defn list-component [list owner]
   (om/component
    (div {:className "list"
-         :style {:background-color "#bbb"
-                 :width 300
+         :style {:width 300
                  :flex "none"
                  :display "flex"
                  :max-height "100%"
                  :flex-direction "column"}}
-        (div {:style {:flex "none"}}
+        (div {:style {:flex "none"
+                      :padding "8px 8px 0 8px"}}
              (:name list))
-        (apply div {:style {:overflow-y "scroll"
-                            :background-color "#8f8"}}
+        (apply div {:style {:overflow-y "auto"}}
                (om/build-all card-component (:cards list))))))
 
 (defn board-component [board owner]
   (om/component
    (div {:className "board"}
-        (div {:style {:height 30}}
+        (div {:style {:height 30
+                      :line-height 30}}
              (:name board))
         (apply div {:style {:display "flex"
                             :flex-direction "row"
                             :flex "1 0 auto"
                             :align-items "flex-start"
-                            :overflow-x "scroll"
+                            :overflow-x "auto"
                             :position "absolute"
-                            :top 30
+                            :top 50
                             :bottom 0
                             :left 0
                             :right 0
+                            :padding 8
                             :background-color "#f8f"}}
                (om/build-all list-component (:lists board))))))
 
-(om/root board-component
+(defn app-component [app-state owner]
+  (om/component
+   (let [on-change (fn [e]
+                     (js/console.log e)
+                     (println (-> e :target :value)))]
+     (div nil
+          (dom/input #js {:type "range"
+                          :min 0
+                          :max 10
+                          :onChange on-change
+                          :style #js {:display "block"
+                                      :height 20
+                                      :width "100%"}})
+          (om/build board-component (:board app-state))))))
+
+(om/root app-component
          app-state
-         {:target (js/document.getElementById "my-app")
-          :path [:board]})
+         {:target (js/document.getElementById "my-app")})
 
 (defn sanitize-board [board]
   (let [cards (:cards board)
