@@ -1,6 +1,8 @@
 (ns main.core
-  (:require [om.core :as om :include-macros true]
-            [om.dom :as dom :include-macros true]))
+  (:require
+   [clojure.string :as string]
+   [om.core :as om :include-macros true]
+   [om.dom :as dom :include-macros true]))
 
 ; TODO: figure out how to include the clojure core incubator as a dependency
 (defn dissoc-in
@@ -32,7 +34,25 @@
                   (fn [a]
                     (js/console.log (str "failed " a)))))
 
-(def app-state (atom {}))
+(def app-state (atom {:latest-board {} :actions []}))
+
+;;;
+
+(defn sanitize-card [card]
+  (update-in card [:idMembers] set))
+
+(defn sanitize-board [board]
+  (let [id-list-to-map (fn [list-of-models]
+                         (->> list-of-models
+                              (map #(-> [(% :id) %]))
+                              (flatten)
+                              (apply hash-map)))
+        cards (id-list-to-map (->> board :cards (map sanitize-card)))
+        lists (id-list-to-map (board :lists))]
+    (-> board
+        (merge {:cards cards
+                :lists lists})
+        (dissoc :actions))))
 
 ;;;
 
@@ -40,21 +60,71 @@
 
 (defmulti rewind-action (fn [board {:keys [type]}] type))
 
+(defn apply-card-action [board action f]
+  (update-in board [:cards (card-id action)] f))
+
 (defmethod rewind-action "updateCard" [board action]
-  (update-in board [:cards (card-id action)]
-             #(merge % (-> action :data :old))))
+  (apply-card-action board action
+                     (fn [card]
+                       (when (nil? card)
+                         (println "updateCard action for unknown card!"))
+                       ; we assume in other rewinders that
+                       ; idMembers is always a set. (because
+                       ; (conj nil :foo) gives (list :foo))
+                       (merge (or card {:idMembers #{}})
+                              (-> action :data :old)))))
+
+(defmethod rewind-action "addMemberToCard" [board action]
+  (apply-card-action board action
+                     (fn [card]
+                       (update-in card [:idMembers] #(disj % (-> action :data :idMember))))))
+
+(defmethod rewind-action "removeMemberFromCard" [board action]
+  (apply-card-action board action
+                     (fn [card]
+                       (update-in card [:idMembers] #(conj % (-> action :data :idMember))))))
+
+(defmethod rewind-action "updateBoard" [board action]
+  (merge board (-> action :data :old)))
 
 (defmethod rewind-action "updateList" [board action]
   (update-in board [:lists (-> action :data :list :id)]
              #(merge % (-> action :data :old))))
 
-(doseq [type ["createCard" "convertToCardFromCheckItem"]]
+(doseq [type ["createCard"
+              "convertToCardFromCheckItem"
+              "copyCard"
+              "moveCardFromBoard"]]
   (defmethod rewind-action type [board action]
     (dissoc-in board [:cards (card-id action)])))
 
+(doseq [type ["deleteCard"
+              "moveCardToBoard"]]
+  (defmethod rewind-action type [board action]
+    (assoc-in board [:cards (card-id action)] (-> action :data :card sanitize-card))))
+
+(doseq [type ["moveListToBoard"]]
+  (defmethod rewind-action type [board action]
+    (assoc-in board [:lists (-> action :data :list :id)] (-> action :data :list))))
+
+(doseq [type ["createList"
+              "moveListFromBoard"]]
+  (defmethod rewind-action type [board action]
+    (dissoc-in board [:lists (-> action :data :list :id)])))
+
+(def no-op-actions #{"updateCheckItemStateOnCard"
+                     "addChecklistToCard"
+                     "commentCard"
+                     "copyCommentCard"
+                     "makeAdminOfBoard"
+                     "unconfirmedBoardInvitation"
+                     "addMemberToBoard"
+                     "addAttachmentToCard"
+                     "deleteAttachmentFromCard"
+                     "makeNormalMemberOfBoard"})
 
 (defmethod rewind-action :default [board action]
-  (println (str "unknown action type " (:type action) " with data: " (pr-str action)))
+  (println (str "unknown action type " (action :type) (str " with data: " (pr-str action))))
   board)
 
 ;;;
@@ -66,7 +136,10 @@
   (om/component
    (div {:className "card"
          :style {:flex "none"}}
-        (:name card))))
+        (str (card :name)
+             " ("
+             (string/join " " (card :idMembers))
+             ")"))))
 
 (defn list-component [list owner]
   (om/component
@@ -81,10 +154,10 @@
                       :flex-direction "column"}}
              (div {:style {:flex "none"
                            :padding "8px 8px 0 8px"}}
-                  (:name list))
+                  (list :name))
              (apply div {:style {:overflow-y "auto"
                                  :flex "0 1 auto"}}
-                    (om/build-all card-component (:cards list)))))))
+                    (om/build-all card-component (list :cards)))))))
 
 (defn board-component [board owner]
   (om/component
@@ -100,7 +173,7 @@
                       :font-size 18
                       :padding "0 8px"
                       :color "white"}}
-             (:name board))
+             (board :name))
         (apply div {:style {:white-space "nowrap"
                             :overflow-x "auto"
                             :position "absolute"
@@ -111,13 +184,16 @@
                             :padding "8"}}
                (let [cards (-> board :cards vals)
                      lists (-> board :lists vals)
-                     card-map (group-by :idList cards)
+                     card-map (->> cards
+                                   (remove :closed)
+                                   (group-by :idList))
                      list-with-cards (fn [list]
                                        (assoc list :cards (->> list
                                                                :id
                                                                card-map
                                                                (sort-by :pos))))
                      friendly-lists (->> lists
+                                         (remove :closed)
                                          (map list-with-cards)
                                          (sort-by :pos))]
                  (om/build-all list-component friendly-lists))))))
@@ -125,15 +201,15 @@
 (defn slider-component [{:keys [actions change-handler time-index]} _]
   (om/component
    (div nil (div nil (str time-index))
-   (dom/input #js {:type "range"
-                   :min 0
-                   :max (count actions)
-                   :value time-index
-                   :onChange #(change-handler (.. % -target -value))
-                   :style #js {:display "block"
-                               :height 20
-                               :margin "0 auto"
-                               :width "90%"}}))))
+        (dom/input #js {:type "range"
+                        :min 0
+                        :max (count actions)
+                        :value time-index
+                        :onChange #(change-handler (.. % -target -value))
+                        :style #js {:display "block"
+                                    :height 20
+                                    :margin "0 auto"
+                                    :width "90%"}}))))
 
 (defn app-component [app-state owner]
   (reify
@@ -141,37 +217,26 @@
     (init-state [_] {:time-index 0})
     om/IRenderState
     (render-state [_ {:keys [time-index]}]
-      (div nil
-           (om/build slider-component {:actions (-> app-state :board :actions)
-                                       :change-handler #(om/set-state! owner :time-index %)
-                                       :time-index time-index})
-           (let [board (:board app-state)
-                 all-actions (:actions board)
-                 actions (take time-index all-actions)
-                 past-board (reduce rewind-action board actions)]
-             (om/build board-component past-board))))))
+                  (div nil
+                       (om/build slider-component {:actions (app-state :actions)
+                                                   :change-handler #(om/set-state! owner :time-index %)
+                                                   :time-index time-index})
+                       (let [actions (take time-index (app-state :actions))
+                             board (reduce rewind-action (app-state :latest-board) actions)]
+                         (om/build board-component board))))))
 
 (om/root app-component
          app-state
          {:target (js/document.getElementById "my-app")})
 
-(defn sanitize-board [board]
-  (let [id-list-to-map (fn [list-of-models]
-                         (->> list-of-models
-                              (map #(-> [(:id %) %]))
-                              (flatten)
-                              (apply hash-map)))
-        cards (id-list-to-map (:cards board))
-        lists (id-list-to-map (:lists board))]
-    (merge board {:cards cards
-                  :lists lists})))
-
 (trello "GET"
-        {:lists "open"
-         :list_fields "name,pos"
-         :cards "open"
-         :card_fields "name,idList,pos"
+        {:lists "all"
+         :list_fields "name,pos,closed"
+         :cards "all"
+         :card_fields "name,idList,pos,idMembers,closed"
          :actions "all"
-         :actions_limit 10}
+         :actions_limit 100}
         "boards/2NRtSl8O"
-        #(swap! app-state assoc :board (sanitize-board %)))
+        (fn [board]
+          (reset! app-state {:actions (->> board :actions (remove #(contains? no-op-actions (% :type))))
+                             :latest-board (sanitize-board board)})))
