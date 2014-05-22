@@ -9,16 +9,58 @@ body {
 }
 
 .board {
+  position: absolute;
+  top: 80px;
+  bottom: 0px;
+  left: 0px;
+  right: 0px;
+  background-color: rgb(35, 113, 159);
+}
+
+.board-title {
+  height: 30px;
+  line-height: 30px;
+  font-size: 18px;
+  padding: 0 8px;
+  color: white;
+}
+
+.lists-container {
+  white-space: nowrap;
+  overflow-x: auto;
+  position: absolute;
+  top: 30px;
+  bottom: 0px;
+  left: 0px;
+  right: 0px;
+  padding: 8px;
 }
 
 .list {
+  width: 300px;
+  white-space: normal;
+  vertical-align: top;
+  display: inline-block;
+  max-height: 100%;
   border-radius: 5px;
   background-color: #ddd;
   border-bottom: solid 1px rgba(0, 0, 0, 0.5);
   box-sizing: border-box;
 }
 
-.list+.list {
+.list-title {
+  flex: "none";
+  padding: 8px 8px 0 8px;
+}
+
+
+.list > div {
+  display: flex;
+  max-height: 100%;
+  flex-direction: column;
+}
+
+.list + .list {
   margin-left: 8px;
 }
 
@@ -60,3 +102,4 @@ body {
 .member + .member {
   margin-left: 4px;
 }
+

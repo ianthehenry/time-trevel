@@ -150,17 +150,9 @@
 
 (defn list-component [list owner]
   (om/component
-   (div {:className "list"
-         :style {:width 300
-                 :white-space "normal"
-                 :vertical-align "top"
-                 :display "inline-block"
-                 :max-height "100%"}}
-        (div {:style {:display "flex"
-                      :max-height "100%"
-                      :flex-direction "column"}}
-             (div {:style {:flex "none"
-                           :padding "8px 8px 0 8px"}}
+   (div {:className "list"}
+        (div nil
+             (div {:className "list-title"}
                   (list :name))
              (apply div {:style {:overflow-y "auto"
                                  :flex "0 1 auto"}}
@@ -168,27 +160,10 @@
 
 (defn board-component [[board member-map] owner]
   (om/component
-   (div {:className "board"
-         :style {:position "absolute"
-                 :top 80
-                 :bottom 0
-                 :left 0
-                 :right 0
-                 :background-color "rgb(35, 113, 159)"}}
-        (div {:style {:height 30
-                      :line-height 30
-                      :font-size 18
-                      :padding "0 8px"
-                      :color "white"}}
+   (div {:className "board"}
+        (div {:className "board-title"}
              (board :name))
-        (apply div {:style {:white-space "nowrap"
-                            :overflow-x "auto"
-                            :position "absolute"
-                            :top 30
-                            :bottom 0
-                            :left 0
-                            :right 0
-                            :padding "8"}}
+        (apply div {:className "lists-container"}
                (let [cards (-> board :cards vals)
                      lists (-> board :lists vals)
                      resolve-members (fn [card]
@@ -252,7 +227,7 @@
          :member_fields "avatarHash,initials"
          :actions "all"
          :actions_limit 1000}
-        "boards/dbdNNMrI"
+        "boards/v4gGwE24"
         (fn [board]
           (reset! app-state {:actions (->> board :actions (remove #(contains? no-op-actions (% :type))))
                              :members (->> board :members vec->id-map)
