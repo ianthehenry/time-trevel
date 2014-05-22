@@ -28,4 +28,35 @@ body {
   border-bottom: solid 1px #888;
   margin: 8px;
   padding: 8px;
+  flex: none;
+}
+
+.member-container {
+  text-align: right;
+  margin-right: -4px;
+  margin-bottom: -4px;
+}
+
+.member {
+  display: inline-block;
+  width: 30px;
+  height: 30px;
+  line-height: 30px;
+  text-align: center;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #444;
+  background-color: #c7c7c7;
+  vertical-align: bottom;
+}
+
+.member > img {
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+}
+
+.member + .member {
+  margin-left: 4px;
 }

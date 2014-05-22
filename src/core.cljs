@@ -19,7 +19,6 @@
       m)
     (dissoc m k)))
 
-
 (enable-console-print!)
 
 (js/Trello.authorize (clj->js {:name "Time Treveller"
@@ -38,21 +37,22 @@
 
 ;;;
 
+(defn vec->id-map [v]
+  (->> v
+       (map #(-> [(% :id) %]))
+       (flatten)
+       (apply hash-map)))
+
 (defn sanitize-card [card]
   (update-in card [:idMembers] set))
 
 (defn sanitize-board [board]
-  (let [id-list-to-map (fn [list-of-models]
-                         (->> list-of-models
-                              (map #(-> [(% :id) %]))
-                              (flatten)
-                              (apply hash-map)))
-        cards (id-list-to-map (->> board :cards (map sanitize-card)))
-        lists (id-list-to-map (board :lists))]
+  (let [cards (->> board :cards (map sanitize-card) vec->id-map)
+        lists (->> board :lists vec->id-map)]
     (-> board
         (merge {:cards cards
                 :lists lists})
-        (dissoc :actions))))
+        (dissoc :actions :members))))
 
 ;;;
 
@@ -132,14 +132,21 @@
 (defn div [props & children]
   (apply dom/div (clj->js props) children))
 
+(defn member-component [member owner]
+  (om/component
+   (div {:className "member"}
+        (if (member :avatarHash)
+          (let [img-src (str "https://trello-avatars.s3.amazonaws.com/" (member :avatarHash) "/30.png")]
+            (dom/img (clj->js {:src img-src})))
+          (member :initials)))))
+
 (defn card-component [card owner]
   (om/component
-   (div {:className "card"
-         :style {:flex "none"}}
-        (str (card :name)
-             " ("
-             (string/join " " (card :idMembers))
-             ")"))))
+   (let [members (card :members)]
+     (div {:className (if (empty? members) "card" "card with-members")}
+          (div nil (card :name))
+          (apply div {:className "member-container"}
+                 (om/build-all member-component members))))))
 
 (defn list-component [list owner]
   (om/component
@@ -159,7 +166,7 @@
                                  :flex "0 1 auto"}}
                     (om/build-all card-component (list :cards)))))))
 
-(defn board-component [board owner]
+(defn board-component [[board member-map] owner]
   (om/component
    (div {:className "board"
          :style {:position "absolute"
@@ -184,8 +191,15 @@
                             :padding "8"}}
                (let [cards (-> board :cards vals)
                      lists (-> board :lists vals)
+                     resolve-members (fn [card]
+                                       (-> card
+                                           (assoc :members (->> (card :idMembers)
+                                                                (map member-map)
+                                                                (sort-by :id)))
+                                           (dissoc :idMembers)))
                      card-map (->> cards
                                    (remove :closed)
+                                   (map resolve-members)
                                    (group-by :idList))
                      list-with-cards (fn [list]
                                        (assoc list :cards (->> list
@@ -223,7 +237,7 @@
                                                    :time-index time-index})
                        (let [actions (take time-index (app-state :actions))
                              board (reduce rewind-action (app-state :latest-board) actions)]
-                         (om/build board-component board))))))
+                         (om/build board-component [board (app-state :members)]))))))
 
 (om/root app-component
          app-state
@@ -234,9 +248,12 @@
          :list_fields "name,pos,closed"
          :cards "all"
          :card_fields "name,idList,pos,idMembers,closed"
+         :members "all"
+         :member_fields "avatarHash,initials"
          :actions "all"
-         :actions_limit 100}
-        "boards/2NRtSl8O"
+         :actions_limit 1000}
+        "boards/dbdNNMrI"
         (fn [board]
           (reset! app-state {:actions (->> board :actions (remove #(contains? no-op-actions (% :type))))
+                             :members (->> board :members vec->id-map)
                              :latest-board (sanitize-board board)})))
