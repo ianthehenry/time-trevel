@@ -37,7 +37,7 @@ body {
 }
 
 .list {
-  width: 300px;
+  width: 250px;
   white-space: normal;
   vertical-align: top;
   display: inline-block;
@@ -49,7 +49,7 @@ body {
 }
 
 .list-title {
-  flex: "none";
+  flex: none;
   padding: 8px 8px 0 8px;
 }
 
@@ -71,6 +71,14 @@ body {
   margin: 8px;
   padding: 8px;
   flex: none;
+}
+
+.cover-image {
+  width: 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  margin-bottom: 8px;
 }
 
 .member-container {

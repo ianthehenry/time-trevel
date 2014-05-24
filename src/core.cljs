@@ -33,7 +33,7 @@
                   (fn [a]
                     (js/console.log (str "failed " a)))))
 
-(def app-state (atom {:latest-board {} :actions []}))
+(def app-state (atom {:board {} :actions []}))
 
 ;;;
 
@@ -44,7 +44,9 @@
        (apply hash-map)))
 
 (defn sanitize-card [card]
-  (update-in card [:idMembers] set))
+  (-> card
+      (update-in [:idMembers] set)
+      (update-in [:attachments] vec->id-map)))
 
 (defn sanitize-board [board]
   (let [cards (->> board :cards (map sanitize-card) vec->id-map)
@@ -63,6 +65,9 @@
 (defn apply-card-action [board action f]
   (update-in board [:cards (card-id action)] f))
 
+(def empty-card {:idMembers #{}
+                 :attachments {}})
+
 (defmethod rewind-action "updateCard" [board action]
   (apply-card-action board action
                      (fn [card]
@@ -71,7 +76,7 @@
                        ; we assume in other rewinders that
                        ; idMembers is always a set. (because
                        ; (conj nil :foo) gives (list :foo))
-                       (merge (or card {:idMembers #{}})
+                       (merge (or card empty-card)
                               (-> action :data :old)))))
 
 (defmethod rewind-action "addMemberToCard" [board action]
@@ -134,19 +139,43 @@
 
 (defn member-component [member owner]
   (om/component
-   (div {:className "member"}
+   (if member
+     (div {:className "member"}
         (if (member :avatarHash)
           (let [img-src (str "https://trello-avatars.s3.amazonaws.com/" (member :avatarHash) "/30.png")]
             (dom/img (clj->js {:src img-src})))
-          (member :initials)))))
+          (member :initials)))
+     (div nil "?"))))
+
+(defn cover-image-component [attachment owner]
+  (om/component
+   (let [preview (->> attachment
+                      :previews
+                      (filter #(-> % :width (>= 250)))
+                      (apply min-key :width))
+         image (or preview attachment)]
+
+     (div {:className "cover-image"
+           :style {:background-image (str "url(" (image :url) ")")
+                   :background-color (attachment :edgeColor)
+                   :height (or (image :height) 100)
+                   }}))))
+
+(-> @app-state :board :cards vals first :attachments vals first)
 
 (defn card-component [card owner]
   (om/component
-   (let [members (card :members)]
-     (div {:className (if (empty? members) "card" "card with-members")}
-          (div nil (card :name))
-          (apply div {:className "member-container"}
-                 (om/build-all member-component members))))))
+   (apply div {:className "card"}
+          (keep identity
+                [(if-let [cover-id (card :idAttachmentCover)]
+                   (if-let [cover (-> card :attachments (get cover-id))]
+                     (om/build cover-image-component cover)))
+                 (div nil (card :name))
+                 (let [members (card :members)]
+                   (if (seq members)
+                     (apply div {:className "member-container"}
+                            (om/build-all member-component members))))
+                 ]))))
 
 (defn list-component [list owner]
   (om/component
@@ -211,7 +240,7 @@
                                                    :change-handler #(om/set-state! owner :time-index %)
                                                    :time-index time-index})
                        (let [actions (take time-index (app-state :actions))
-                             board (reduce rewind-action (app-state :latest-board) actions)]
+                             board (reduce rewind-action (app-state :board) actions)]
                          (om/build board-component [board (app-state :members)]))))))
 
 (om/root app-component
@@ -222,13 +251,15 @@
         {:lists "all"
          :list_fields "name,pos,closed"
          :cards "all"
-         :card_fields "name,idList,pos,idMembers,closed"
+         :card_fields "name,idList,pos,idMembers,closed,idAttachmentCover"
+         :card_attachments true
+         :card_attachment_fields "url,previews,edgeColor"
          :members "all"
          :member_fields "avatarHash,initials"
          :actions "all"
          :actions_limit 1000}
-        "boards/v4gGwE24"
+        "boards/2NRtSl8O"
         (fn [board]
           (reset! app-state {:actions (->> board :actions (remove #(contains? no-op-actions (% :type))))
                              :members (->> board :members vec->id-map)
-                             :latest-board (sanitize-board board)})))
+                             :board (sanitize-board board)})))
