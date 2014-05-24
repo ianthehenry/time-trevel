@@ -46,7 +46,8 @@
 (defn sanitize-card [card]
   (-> card
       (update-in [:idMembers] set)
-      (update-in [:attachments] vec->id-map)))
+      (update-in [:attachments] vec->id-map)
+      (update-in [:labels] #(->> % (map :color) set))))
 
 (defn sanitize-board [board]
   (let [cards (->> board :cards (map sanitize-card) vec->id-map)
@@ -66,7 +67,9 @@
   (update-in board [:cards (card-id action)] f))
 
 (def empty-card {:idMembers #{}
-                 :attachments {}})
+                 :attachments {}
+                 :lables #{}
+                 :name "(unknown card)"})
 
 (defmethod rewind-action "updateCard" [board action]
   (apply-card-action board action
@@ -77,7 +80,8 @@
                        ; idMembers is always a set. (because
                        ; (conj nil :foo) gives (list :foo))
                        (merge (or card empty-card)
-                              (-> action :data :old)))))
+                              (-> action :data :old
+                                  (update-in [:labels] set))))))
 
 (defmethod rewind-action "addMemberToCard" [board action]
   (apply-card-action board action
@@ -161,13 +165,15 @@
                    :height (or (image :height) 100)
                    }}))))
 
-(-> @app-state :board :cards vals first :attachments vals first)
-
 (defn card-component [card owner]
   (om/component
    (apply div {:className "card"}
           (keep identity
-                [(if-let [cover-id (card :idAttachmentCover)]
+                [(let [labels (filter (card :labels) ["green" "yellow" "orange" "red" "purple" "blue"])]
+                   (if (seq labels)
+                     (apply div {:className "labels"}
+                            (map #(div {:className (str "label-" %)}) labels))))
+                 (if-let [cover-id (card :idAttachmentCover)]
                    (if-let [cover (-> card :attachments (get cover-id))]
                      (om/build cover-image-component cover)))
                  (div nil (card :name))
@@ -251,7 +257,7 @@
         {:lists "all"
          :list_fields "name,pos,closed"
          :cards "all"
-         :card_fields "name,idList,pos,idMembers,closed,idAttachmentCover"
+         :card_fields "name,idList,pos,idMembers,closed,idAttachmentCover,labels"
          :card_attachments true
          :card_attachment_fields "url,previews,edgeColor"
          :members "all"

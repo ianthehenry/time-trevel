@@ -87,6 +87,28 @@ body {
   margin-bottom: -4px;
 }
 
+.labels {
+  margin-top: -8px;
+  margin-bottom: 8px;
+}
+
+.labels > div + div {
+  margin-left: 4px;
+}
+
+.labels > div {
+  width: 33px; /* e'ery day i'm couplin' */
+  height: 4px;
+  display: inline-block;
+}
+
+.label-green { background-color: #34b27d; }
+.label-yellow { background-color: #dbdb57; }
+.label-orange { background-color: #e09952; }
+.label-red { background-color: #cb4d4d; }
+.label-purple { background-color: #93c; }
+.label-blue { background-color: #4d77cb; }
+
 .member {
   display: inline-block;
   width: 30px;
