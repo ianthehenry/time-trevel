@@ -24,8 +24,8 @@
 (js/Trello.authorize (clj->js {:name "Time Treveller"
                                :expiration "never"}))
 
-(defn trello [method args path callback]
-  (js/Trello.rest method
+(defn trello [path args callback]
+  (js/Trello.rest "GET"
                   path
                   (clj->js args)
                   (fn [result status jqxhr]
@@ -123,6 +123,7 @@
 
 (def no-op-actions #{"updateCheckItemStateOnCard"
                      "addChecklistToCard"
+                     "removeChecklistFromCard"
                      "commentCard"
                      "copyCommentCard"
                      "makeAdminOfBoard"
@@ -130,7 +131,12 @@
                      "addMemberToBoard"
                      "addAttachmentToCard"
                      "deleteAttachmentFromCard"
-                     "makeNormalMemberOfBoard"})
+                     "makeNormalMemberOfBoard"
+                     "enablePowerUp"
+                     "disablePowerUp"
+                     "removeFromOrganizationBoard"
+                     "addToOrganizationBoard"
+                     "createBoard"})
 
 (defmethod rewind-action :default [board action]
   (println (str "unknown action type " (action :type) (str " with data: " (pr-str action))))
@@ -222,13 +228,25 @@
                                          (sort-by :pos))]
                  (om/build-all list-component friendly-lists))))))
 
+(defn pretty-print-date [date-string]
+  (let [js-date (js/Date. date-string)
+        month-names ["Jan" "Feb" "Mar" "Apr" "May" "June" "July" "Aug" "Sep" "Oct" "Nov" "Dec"]
+        month (month-names (.getMonth js-date))
+        day (.getDate js-date)
+        year (.getFullYear js-date)]
+    (str month " " day " " year)))
+
 (defn slider-component [{:keys [actions change-handler time-index]} _]
   (om/component
-   (div nil (div nil (str time-index))
+   (div nil (div {:className "timestamp"}
+                 (if (= time-index (count actions))
+                   "the beginning of time"
+                   (pretty-print-date ((actions time-index) :date))))
         (dom/input #js {:type "range"
                         :min 0
                         :max (count actions)
                         :value time-index
+                        :defaultValue (count actions)
                         :onChange #(change-handler (.. % -target -value))
                         :style #js {:display "block"
                                     :height 20
@@ -243,7 +261,7 @@
     (render-state [_ {:keys [time-index]}]
                   (div nil
                        (om/build slider-component {:actions (app-state :actions)
-                                                   :change-handler #(om/set-state! owner :time-index %)
+                                                   :change-handler #(om/set-state! owner :time-index (js/parseInt % 10))
                                                    :time-index time-index})
                        (let [actions (take time-index (app-state :actions))
                              board (reduce rewind-action (app-state :board) actions)]
@@ -253,7 +271,32 @@
          app-state
          {:target (js/document.getElementById "my-app")})
 
-(trello "GET"
+(def board-id "zp0ERVhf")
+
+(defn useful-actions [all-actions]
+  (remove #(contains? no-op-actions (% :type)) all-actions))
+
+(defn load-actions-before [date-string limit cb]
+  (trello (str "boards/" board-id "/actions")
+          {:before date-string
+           :limit limit}
+          cb))
+
+(defn add-actions! [new-actions]
+  (let [concat-actions #(vec (concat % (useful-actions new-actions)))]
+    (swap! app-state #(update-in % [:actions] concat-actions))))
+
+(defn load-all-actions! [date-string]
+  (let [limit 500]
+    (load-actions-before date-string
+                         limit
+                         (fn [new-actions]
+                           (add-actions! new-actions)
+                           (if (= (count new-actions) limit)
+                             (load-all-actions! (-> new-actions last :date))
+                             (println "done"))))))
+
+(trello (str "boards/" board-id)
         {:lists "all"
          :list_fields "name,pos,closed"
          :cards "all"
@@ -263,9 +306,13 @@
          :members "all"
          :member_fields "avatarHash,initials"
          :actions "all"
-         :actions_limit 1000}
-        "boards/2NRtSl8O"
+         :actions_limit 10}
         (fn [board]
-          (reset! app-state {:actions (->> board :actions (remove #(contains? no-op-actions (% :type))))
-                             :members (->> board :members vec->id-map)
-                             :board (sanitize-board board)})))
+          (let [all-actions (board :actions)]
+            (reset! app-state {:actions (vec (useful-actions all-actions))
+                               :members (-> board :members vec->id-map)
+                               :board (sanitize-board board)})
+            (load-all-actions! (-> all-actions last :date)))))
+
+
+;(-> @app-state :actions last :date)
