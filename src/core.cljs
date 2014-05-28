@@ -245,9 +245,11 @@
         (dom/input #js {:type "range"
                         :min 0
                         :max (count actions)
-                        :value time-index
-                        :defaultValue (count actions)
-                        :onChange #(change-handler (.. % -target -value))
+                        :value (- (count actions) time-index)
+                        :onChange (fn [e]
+                                    (let [value (js/parseInt (.. e -target -value) 10)
+                                          max-value (js/parseInt (.. e -target -max) 10)]
+                                      (change-handler (- max-value value))))
                         :style #js {:display "block"
                                     :height 20
                                     :margin "0 auto"
@@ -261,7 +263,7 @@
     (render-state [_ {:keys [time-index]}]
                   (div nil
                        (om/build slider-component {:actions (app-state :actions)
-                                                   :change-handler #(om/set-state! owner :time-index (js/parseInt % 10))
+                                                   :change-handler #(om/set-state! owner :time-index %)
                                                    :time-index time-index})
                        (let [actions (take time-index (app-state :actions))
                              board (reduce rewind-action (app-state :board) actions)]
@@ -271,7 +273,7 @@
          app-state
          {:target (js/document.getElementById "my-app")})
 
-(def board-id "zp0ERVhf")
+(def board-id "dbdNNMrI")
 
 (defn useful-actions [all-actions]
   (remove #(contains? no-op-actions (% :type)) all-actions))
@@ -314,5 +316,3 @@
                                :board (sanitize-board board)})
             (load-all-actions! (-> all-actions last :date)))))
 
-
-;(-> @app-state :actions last :date)
