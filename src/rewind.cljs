@@ -1,11 +1,9 @@
 (ns main.rewind
-  (:require [main.utils :refer [dissoc-in no-op-actions]]))
+  (:require [main.utils :refer [dissoc-in no-op-actions sanitize-card]]))
 
-(defmulti rewind-action (fn [board {:keys [type]}] type))
+(defmulti rewind-action (fn [board action] (action :type)))
 
 (defn card-id [action] (-> action :data :card :id))
-
-(defmulti rewind-action (fn [board {:keys [type]}] type))
 
 (defn apply-card-action [board action f]
   (update-in board [:cards (card-id action)] f))
