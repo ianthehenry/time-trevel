@@ -31,6 +31,7 @@
                      "disablePowerUp"
                      "removeFromOrganizationBoard"
                      "addToOrganizationBoard"
+                     "updateChecklist"
                      "createBoard"})
 
 (defn vec->id-map [v]
@@ -44,6 +45,12 @@
       (update-in [:idMembers] set)
       (update-in [:attachments] vec->id-map)
       (update-in [:labels] #(->> % (map :color) set))))
+
+(defn sanitize-list [list]
+  (-> list
+      (assoc :id (or (list :id)
+                     (list :_id)))
+      (dissoc :_id)))
 
 (defn sanitize-board [board]
   (let [cards (->> board :cards (map sanitize-card) vec->id-map)

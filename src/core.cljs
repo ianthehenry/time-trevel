@@ -18,10 +18,10 @@
   (om/component
    (if member
      (div {:className "member"}
-        (if (member :avatarHash)
-          (let [img-src (str "https://trello-avatars.s3.amazonaws.com/" (member :avatarHash) "/30.png")]
-            (dom/img (clj->js {:src img-src})))
-          (member :initials)))
+          (if (member :avatarHash)
+            (let [img-src (str "https://trello-avatars.s3.amazonaws.com/" (member :avatarHash) "/30.png")]
+              (dom/img (clj->js {:src img-src})))
+            (member :initials)))
      (div nil "?"))))
 
 (defn cover-image-component [attachment owner]
@@ -182,4 +182,3 @@
                                    :members (-> board :members vec->id-map)
                                    :board (sanitize-board board)})
                 (load-all-actions! (-> all-actions last :date)))))
-

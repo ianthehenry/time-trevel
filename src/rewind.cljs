@@ -1,9 +1,20 @@
 (ns main.rewind
-  (:require [main.utils :refer [dissoc-in no-op-actions sanitize-card]]))
+  (:require [main.utils :refer [dissoc-in
+                                no-op-actions
+                                sanitize-card
+                                sanitize-list]]))
 
 (defmulti rewind-action (fn [board action] (action :type)))
 
-(defn card-id [action] (-> action :data :card :id))
+(defn extract-id [model]
+  (let [presumed-id (or (model :id)
+                        (model :_id))]
+    ; true story. see moveListToBoard actions from early 2013
+    (if (map? presumed-id)
+      (extract-id presumed-id)
+      presumed-id)))
+
+(defn card-id [action] (-> action :data :card extract-id))
 
 (defn apply-card-action [board action f]
   (update-in board [:cards (card-id action)] f))
@@ -39,8 +50,13 @@
   (merge board (-> action :data :old)))
 
 (defmethod rewind-action "updateList" [board action]
-  (update-in board [:lists (-> action :data :list :id)]
-             #(merge % (-> action :data :old))))
+  (let [list-id (-> action :data :list extract-id)]
+    (if (nil? (-> board :lists (get list-id)))
+      (do
+        (println "updateList action for unknown list!")
+        board)
+      (update-in board [:lists list-id]
+                 #(merge % (-> action :data :old))))))
 
 (doseq [type ["createCard"
               "convertToCardFromCheckItem"
@@ -56,14 +72,12 @@
 
 (doseq [type ["moveListToBoard"]]
   (defmethod rewind-action type [board action]
-    (assoc-in board [:lists (-> action :data :list :id)] (-> action :data :list))))
+    (assoc-in board [:lists (-> action :data :list extract-id)] (-> action :data :list sanitize-list))))
 
 (doseq [type ["createList"
               "moveListFromBoard"]]
   (defmethod rewind-action type [board action]
-    (dissoc-in board [:lists (-> action :data :list :id)])))
-
-
+    (dissoc-in board [:lists (-> action :data :list extract-id)])))
 
 (defmethod rewind-action :default [board action]
   (println (str "unknown action type " (action :type) (str " with data: " (pr-str action))))
