@@ -1,148 +1,15 @@
 (ns main.core
   (:require
    [clojure.string :as string]
+   [main.rewind :refer [rewind-action]]
+   [main.trello :as trello]
+   [main.utils :refer [no-op-actions vec->id-map sanitize-board]]
    [om.core :as om :include-macros true]
    [om.dom :as dom :include-macros true]))
 
-; TODO: figure out how to include the clojure core incubator as a dependency
-(defn dissoc-in
-  "Dissociates an entry from a nested associative structure returning a new
-  nested structure. keys is a sequence of keys. Any empty maps that result
-  will not be present in the new structure."
-  [m [k & ks :as keys]]
-  (if ks
-    (if-let [nextmap (get m k)]
-      (let [newmap (dissoc-in nextmap ks)]
-        (if (seq newmap)
-          (assoc m k newmap)
-          (dissoc m k)))
-      m)
-    (dissoc m k)))
-
 (enable-console-print!)
 
-(js/Trello.authorize (clj->js {:name "Time Treveller"
-                               :expiration "never"}))
-
-(defn trello [path args callback]
-  (js/Trello.rest "GET"
-                  path
-                  (clj->js args)
-                  (fn [result status jqxhr]
-                    (callback (js->clj result :keywordize-keys true)))
-                  (fn [a]
-                    (js/console.log (str "failed " a)))))
-
 (def app-state (atom {:board {} :actions []}))
-
-;;;
-
-(defn vec->id-map [v]
-  (->> v
-       (map #(-> [(% :id) %]))
-       (flatten)
-       (apply hash-map)))
-
-(defn sanitize-card [card]
-  (-> card
-      (update-in [:idMembers] set)
-      (update-in [:attachments] vec->id-map)
-      (update-in [:labels] #(->> % (map :color) set))))
-
-(defn sanitize-board [board]
-  (let [cards (->> board :cards (map sanitize-card) vec->id-map)
-        lists (->> board :lists vec->id-map)]
-    (-> board
-        (merge {:cards cards
-                :lists lists})
-        (dissoc :actions :members))))
-
-;;;
-
-(defn card-id [action] (-> action :data :card :id))
-
-(defmulti rewind-action (fn [board {:keys [type]}] type))
-
-(defn apply-card-action [board action f]
-  (update-in board [:cards (card-id action)] f))
-
-(def empty-card {:idMembers #{}
-                 :attachments {}
-                 :lables #{}
-                 :name "(unknown card)"})
-
-(defmethod rewind-action "updateCard" [board action]
-  (apply-card-action board action
-                     (fn [card]
-                       (when (nil? card)
-                         (println "updateCard action for unknown card!"))
-                       ; we assume in other rewinders that
-                       ; idMembers is always a set. (because
-                       ; (conj nil :foo) gives (list :foo))
-                       (merge (or card empty-card)
-                              (-> action :data :old
-                                  (update-in [:labels] set))))))
-
-(defmethod rewind-action "addMemberToCard" [board action]
-  (apply-card-action board action
-                     (fn [card]
-                       (update-in card [:idMembers] #(disj % (-> action :data :idMember))))))
-
-(defmethod rewind-action "removeMemberFromCard" [board action]
-  (apply-card-action board action
-                     (fn [card]
-                       (update-in card [:idMembers] #(conj % (-> action :data :idMember))))))
-
-(defmethod rewind-action "updateBoard" [board action]
-  (merge board (-> action :data :old)))
-
-(defmethod rewind-action "updateList" [board action]
-  (update-in board [:lists (-> action :data :list :id)]
-             #(merge % (-> action :data :old))))
-
-(doseq [type ["createCard"
-              "convertToCardFromCheckItem"
-              "copyCard"
-              "moveCardFromBoard"]]
-  (defmethod rewind-action type [board action]
-    (dissoc-in board [:cards (card-id action)])))
-
-(doseq [type ["deleteCard"
-              "moveCardToBoard"]]
-  (defmethod rewind-action type [board action]
-    (assoc-in board [:cards (card-id action)] (-> action :data :card sanitize-card))))
-
-(doseq [type ["moveListToBoard"]]
-  (defmethod rewind-action type [board action]
-    (assoc-in board [:lists (-> action :data :list :id)] (-> action :data :list))))
-
-(doseq [type ["createList"
-              "moveListFromBoard"]]
-  (defmethod rewind-action type [board action]
-    (dissoc-in board [:lists (-> action :data :list :id)])))
-
-(def no-op-actions #{"updateCheckItemStateOnCard"
-                     "addChecklistToCard"
-                     "removeChecklistFromCard"
-                     "commentCard"
-                     "copyCommentCard"
-                     "makeAdminOfBoard"
-                     "unconfirmedBoardInvitation"
-                     "addMemberToBoard"
-                     "addAttachmentToCard"
-                     "deleteAttachmentFromCard"
-                     "makeNormalMemberOfBoard"
-                     "enablePowerUp"
-                     "disablePowerUp"
-                     "removeFromOrganizationBoard"
-                     "addToOrganizationBoard"
-                     "createBoard"})
-
-(defmethod rewind-action :default [board action]
-  (println (str "unknown action type " (action :type) (str " with data: " (pr-str action))))
-  board)
-
-;;;
 
 (defn div [props & children]
   (apply dom/div (clj->js props) children))
@@ -279,10 +146,10 @@
   (remove #(contains? no-op-actions (% :type)) all-actions))
 
 (defn load-actions-before [date-string limit cb]
-  (trello (str "boards/" board-id "/actions")
-          {:before date-string
-           :limit limit}
-          cb))
+  (trello/GET (str "boards/" board-id "/actions")
+              {:before date-string
+               :limit limit}
+              cb))
 
 (defn add-actions! [new-actions]
   (let [concat-actions #(vec (concat % (useful-actions new-actions)))]
@@ -298,21 +165,21 @@
                              (load-all-actions! (-> new-actions last :date))
                              (println "done"))))))
 
-(trello (str "boards/" board-id)
-        {:lists "all"
-         :list_fields "name,pos,closed"
-         :cards "all"
-         :card_fields "name,idList,pos,idMembers,closed,idAttachmentCover,labels"
-         :card_attachments true
-         :card_attachment_fields "url,previews,edgeColor"
-         :members "all"
-         :member_fields "avatarHash,initials"
-         :actions "all"
-         :actions_limit 10}
-        (fn [board]
-          (let [all-actions (board :actions)]
-            (reset! app-state {:actions (vec (useful-actions all-actions))
-                               :members (-> board :members vec->id-map)
-                               :board (sanitize-board board)})
-            (load-all-actions! (-> all-actions last :date)))))
+(trello/GET (str "boards/" board-id)
+            {:lists "all"
+             :list_fields "name,pos,closed"
+             :cards "all"
+             :card_fields "name,idList,pos,idMembers,closed,idAttachmentCover,labels"
+             :card_attachments true
+             :card_attachment_fields "url,previews,edgeColor"
+             :members "all"
+             :member_fields "avatarHash,initials"
+             :actions "all"
+             :actions_limit 10}
+            (fn [board]
+              (let [all-actions (board :actions)]
+                (reset! app-state {:actions (vec (useful-actions all-actions))
+                                   :members (-> board :members vec->id-map)
+                                   :board (sanitize-board board)})
+                (load-all-actions! (-> all-actions last :date)))))
 
