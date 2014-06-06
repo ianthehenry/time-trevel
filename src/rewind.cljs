@@ -7,8 +7,10 @@
 (defmulti rewind-action (fn [board action] (action :type)))
 
 (defn extract-id [model]
-  (let [presumed-id (or (model :id)
-                        (model :_id))]
+  ; if model is nil, it returns nil.
+  ; yeah, sometimes it's nil. ugh.
+  (let [presumed-id (or (:id model)
+                        (:_id model))]
     ; true story. see moveListToBoard actions from early 2013
     (if (map? presumed-id)
       (extract-id presumed-id)
