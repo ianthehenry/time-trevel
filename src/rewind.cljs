@@ -39,12 +39,16 @@
 (defmethod rewind-action "addMemberToCard" [board action]
   (apply-card-action board action
                      (fn [card]
-                       (update-in card [:idMembers] #(disj % (-> action :data :idMember))))))
+                       (when (nil? card)
+                         (println "addMemberToCard action for unknown card!"))
+                       (update-in (or card empty-card) [:idMembers] #(disj % (-> action :data :idMember))))))
 
 (defmethod rewind-action "removeMemberFromCard" [board action]
   (apply-card-action board action
                      (fn [card]
-                       (update-in card [:idMembers] #(conj % (-> action :data :idMember))))))
+                       (when (nil? card)
+                         (println "removeMemberFromCard action for unknown card!"))
+                       (update-in (or card empty-card) [:idMembers] #(conj % (-> action :data :idMember))))))
 
 (defmethod rewind-action "updateBoard" [board action]
   (merge board (-> action :data :old)))
