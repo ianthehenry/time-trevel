@@ -61,21 +61,28 @@
 (doseq [type ["createCard"
               "convertToCardFromCheckItem"
               "copyCard"
-              "moveCardFromBoard"]]
+              "moveCardToBoard"]]
   (defmethod rewind-action type [board action]
     (dissoc-in board [:cards (card-id action)])))
 
-(doseq [type ["deleteCard"
-              "moveCardToBoard"]]
-  (defmethod rewind-action type [board action]
-    (assoc-in board [:cards (card-id action)] (-> action :data :card sanitize-card))))
+(defn assoc-card [board action card-fn]
+  (assoc-in board [:cards (card-id action)]
+            (-> action :data :card sanitize-card
+                (update-in [:idList] #(or % (-> action :data :list extract-id)))
+                card-fn)))
 
-(doseq [type ["moveListToBoard"]]
+(defmethod rewind-action "moveCardFromBoard" [board action]
+  (assoc-card board action identity))
+
+(defmethod rewind-action "deleteCard" [board action]
+  (assoc-card board action #(assoc % :name "(deleted card)")))
+
+(doseq [type ["moveListFromBoard"]]
   (defmethod rewind-action type [board action]
     (assoc-in board [:lists (-> action :data :list extract-id)] (-> action :data :list sanitize-list))))
 
 (doseq [type ["createList"
-              "moveListFromBoard"]]
+              "moveListToBoard"]]
   (defmethod rewind-action type [board action]
     (dissoc-in board [:lists (-> action :data :list extract-id)])))
 
