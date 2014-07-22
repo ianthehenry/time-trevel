@@ -32,7 +32,8 @@
                      "removeFromOrganizationBoard"
                      "addToOrganizationBoard"
                      "updateChecklist"
-                     "createBoard"})
+                     "createBoard"
+                     "deleteBoardInvitation"})
 
 (defn vec->id-map [v]
   (->> v
