@@ -9,7 +9,7 @@
 
 (enable-console-print!)
 
-(def app-state (atom {:board {} :actions []}))
+(defonce app-state (atom {:board {} :actions []}))
 
 (defn div [props & children]
   (apply dom/div (clj->js props) children))
@@ -122,6 +122,40 @@
                                     :margin "0 auto"
                                     :width "90%"}}))))
 
+(defonce rewind-snapshots (atom {}))
+(def snapshot-size 25)
+
+(defn find-first [f coll] (first (filter f coll)))
+
+(defn last-snapshot [board n]
+  (if (= n 0)
+    [board 0]
+    (if-let [snapshot (@rewind-snapshots n)]
+      [snapshot n]
+      (last-snapshot board (- n 1)))))
+
+(defn apply-and-cache [board start-key actions]
+  (loop [board board
+         actions actions
+         n 0]
+    (if (seq actions)
+      (let [next-board (rewind-action board (first actions))]
+        (when (= 0 (mod n snapshot-size))
+          (let [snapshot-key (+ start-key (quot n snapshot-size))]
+            (swap! rewind-snapshots assoc snapshot-key next-board)))
+
+        (recur next-board (rest actions) (+ n 1)))
+      board)))
+
+(defn rewind-n-actions [board actions n]
+  (let [[snapshot snapshot-key] (last-snapshot board (quot n snapshot-size))
+        preapplied-action-count (* snapshot-size snapshot-key)
+        remaining-action-count (- n preapplied-action-count)
+        actions-to-apply (->> actions
+                              (drop preapplied-action-count)
+                              (take remaining-action-count))]
+    (apply-and-cache snapshot snapshot-key actions-to-apply)))
+
 (defn app-component [app-state owner]
   (reify
     om/IInitState
@@ -132,9 +166,8 @@
                        (om/build slider-component {:actions (app-state :actions)
                                                    :change-handler #(om/set-state! owner :time-index %)
                                                    :time-index time-index})
-                       (let [actions (take time-index (app-state :actions))
-                             board (reduce rewind-action (app-state :board) actions)]
-                         (om/build board-component [board (app-state :members)]))))))
+                       (let [rewound-board (rewind-n-actions (app-state :board) (app-state :actions) time-index)]
+                         (om/build board-component [rewound-board (app-state :members)]))))))
 
 (om/root app-component
          app-state
@@ -153,7 +186,7 @@
 
 (defn add-actions! [new-actions]
   (let [concat-actions #(vec (concat % (useful-actions new-actions)))]
-    (swap! app-state #(update-in % [:actions] concat-actions))))
+    (swap! app-state update-in [:actions] concat-actions)))
 
 (defn load-all-actions! [date-string]
   (let [limit 500]
